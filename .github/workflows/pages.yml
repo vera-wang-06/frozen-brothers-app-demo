@@ -1,0 +1,48 @@
+name: Publish demo to GitHub Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build app
+        env:
+          GITHUB_PAGES: 'true'
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          if [ -f package.json ]; then
+            project_dir=.
+          elif [ -f store-app/package.json ]; then
+            project_dir=store-app
+          else
+            echo "Cannot find package.json in root or store-app"
+            exit 1
+          fi
+          echo "PAGES_OUTPUT=$project_dir/dist" >> "$GITHUB_ENV"
+          cd "$project_dir"
+          npm ci
+          npm test
+          npx expo export --platform web
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.PAGES_OUTPUT }}
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
