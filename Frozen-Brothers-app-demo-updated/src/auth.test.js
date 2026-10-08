@@ -1,0 +1,2 @@
+const {test}=require('node:test');const assert=require('node:assert/strict');const {validateCode}=require('./auth');
+test('only correct six-digit mock code authenticates within validity window',()=>{assert.equal(validateCode('123456',1000,2000),true);assert.equal(validateCode('000000',1000,2000),false);assert.equal(validateCode('12345',1000,2000),false);assert.equal(validateCode('123456',1000,301000),false);assert.equal(validateCode('123456',1000,999),false)});
