@@ -2,6 +2,7 @@ import React from 'react';
 import Svg, {Path,Circle} from 'react-native-svg';
 // Shared 24px outline grid keeps symbols consistent across iOS, Android and web.
 const paths={
+ trash:'M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7',
  phone:'M6 3 3 6c0 8 7 15 15 15l3-3-5-4-3 3-6-6 3-3-4-5Z',
  chat:'M3 4h18v13H8l-5 4V4ZM7 8h10M7 12h7',
  support:'M3 14v-3a9 9 0 0 1 18 0v3M3 12h4v7H3Zm14 0h4v7h-4m4-2v4h-7',
