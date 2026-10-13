@@ -38,7 +38,7 @@ async function complete(){
 }
 export async function readCustomer(){
  if(!accessToken)throw new Error('Please sign in again.');
- const res=await fetch(config.api,{method:'POST',headers:{'Content-Type':'application/json',Authorization:accessToken},body:JSON.stringify({query:'query LoginCheck { customer { id displayName emailAddress { emailAddress } } }'})});
+ const res=await fetch(config.api,{method:'POST',headers:{'Content-Type':'application/json',Authorization:accessToken},body:JSON.stringify({query:'query LoginCheck { customer { id displayName firstName lastName emailAddress { emailAddress } } }'})});
  const data=await res.json();
  if(!res.ok||data.errors||!data.data?.customer)throw new Error('Login completed, but customer details could not be read. Check customer_read_customers permission.');
  assertTestCustomer(data.data.customer);
@@ -146,4 +146,19 @@ export async function changeTestCart(locationId,action,variantId,quantity){
  if(testCart.lines.pageInfo.hasNextPage)throw new Error('Cart exceeds 100 lines; stop this test.');
  return {cart:testCart,warnings:payload.warnings.map(w=>w.message)};
  }finally{cartBusy=false;}
+}
+
+export async function readTestProfile(locationId){
+ assertTestCustomer(verifiedCustomer);
+ if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
+ const data=await customerQuery('query TestProfile { customer { firstName lastName emailAddress { emailAddress } companyContacts(first:100) { nodes { locations(first:100) { nodes { id shippingAddress { formattedAddress } billingAddress { formattedAddress } buyerExperienceConfiguration { payNowOnly } } } } } } }');
+ const selected=data.customer.companyContacts.nodes.flatMap(c=>c.locations.nodes).find(l=>l.id===locationId);
+ if(!selected)throw new Error('Profile location not returned.');
+ return {customer:data.customer,location:selected};
+}
+export async function readTestOrders(locationId){
+ assertTestCustomer(verifiedCustomer);
+ if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
+ const data=await customerQuery('query TestOrderHistory { customer { orders(first:20,reverse:true,sortKey:PROCESSED_AT) { nodes { id name processedAt totalPrice { amount currencyCode } purchasingEntity { ... on PurchasingCompany { location { id } } } lineItems(first:20) { nodes { title quantity productId variantId image { url } } } } } } }');
+ return data.customer.orders.nodes.filter(o=>o.purchasingEntity?.location?.id===locationId);
 }
