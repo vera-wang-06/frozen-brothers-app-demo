@@ -110,6 +110,16 @@ export async function changeTestCart(locationId,action,variantId,quantity){
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables})});
  const data=await res.json();let payload=data.data?.[operation];
  if(!res.ok||data.errors||!payload)throw new Error('Shopify cart request failed. No automatic retry was made.');
+ async function inspectCart(cartId){
+  if(!cartId?.includes('?key=')){cartBlocked=true;throw new Error('Cart response did not include its private verification key. Testing stopped.');}
+  const response=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query:`query VerifyTestCart($id:ID!) { cart(id:$id) { ${cartFields} } }`,variables:{id:cartId}})});
+  const result=await response.json();
+  const requestId=response.headers?.get('x-request-id')||'not exposed';
+  if(!response.ok||result.errors||!result.data?.cart){cartBlocked=true;throw new Error('Could not independently read the test cart. Request ID: '+requestId);}
+  return {cart:result.data.cart,requestId};
+ }
+ let cartReadRequest='not requested';
+ if(payload.cart&&!payload.userErrors.length){const verified=await inspectCart(payload.cart.id);payload={...payload,cart:verified.cart};cartReadRequest=verified.requestId;}
  // Some carts need an explicit identity update after creation. Reuse the
  // same cart; never recreate or accept a missing location as confirmation.
  if(operation==='cartCreate'&&payload.cart&&!payload.userErrors.length&&payload.cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){
@@ -119,6 +129,7 @@ export async function changeTestCart(locationId,action,variantId,quantity){
   if(!identityRes.ok||identityData.errors||!identityData.data?.cartBuyerIdentityUpdate){cartBlocked=true;throw new Error('Explicit cart buyer association failed. Cart testing stopped.');}
   const bound=identityData.data.cartBuyerIdentityUpdate;
   payload={...bound,warnings:[...payload.warnings,...bound.warnings]};
+  if(bound.cart&&!bound.userErrors.length){const verified=await inspectCart(bound.cart.id);payload={...payload,cart:verified.cart};cartReadRequest=verified.requestId;}
  }
  const errors=payload.userErrors.map(e=>e.message),warnings=payload.warnings.map(w=>w.message);
  if(errors.length)throw new Error('Shopify: '+errors.join(' ')+(warnings.length?' Warnings: '+warnings.join(' '):''));
@@ -127,7 +138,7 @@ export async function changeTestCart(locationId,action,variantId,quantity){
   if(actual!==locationId){
    cartBlocked=true;testCart=null;
    const reason=actual?'Returned a different company location.':'Returned no purchasing company location.';
-   throw new Error('Cart identity check stopped this test. '+reason+' Requested location: '+locationId+'. Returned location: '+(actual||'none')+'. '+(warnings.length?'Shopify warnings: '+warnings.join(' '):'Shopify returned no warnings.'));
+   throw new Error('Cart identity check stopped this test. '+reason+' Requested location: '+locationId+'. Returned location: '+(actual||'none')+'. '+(warnings.length?'Shopify warnings: '+warnings.join(' '):'Shopify returned no warnings.')+' Request ID: '+cartReadRequest);
   }
   testCart=payload.cart;cartLocation=locationId;
  }
