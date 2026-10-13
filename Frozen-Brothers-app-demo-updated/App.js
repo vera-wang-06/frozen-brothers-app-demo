@@ -4,7 +4,7 @@ import {View,Text,Image,ImageBackground,TextInput,Pressable,ScrollView,StyleShee
 import {SafeAreaProvider,SafeAreaView} from 'react-native-safe-area-context';
 import {StatusBar} from 'expo-status-bar';
 import Icon from './src/Icon';
-import AuthScreen from './src/AuthScreen';
+import ShopifyLoginScreen from './src/ShopifyLoginScreen';
 import OrdersScreen,{initialOrders} from './src/OrdersScreen';
 import AccountScreen from './src/AccountScreen';
 import QuickOrderScreen from './src/QuickOrderScreen';
@@ -23,7 +23,7 @@ function AppContent(){
 
  const {width:windowWidth}=useWindowDimensions();
  const heroHeight=(Math.min(390,windowWidth)-44)*264/585;
- const [screen,setScreen]=useState('Splash'),[history,setHistory]=useState([]),[cart,setCart]=useState({}),[selected,setSelected]=useState(products[0]),[qty,setQty]=useState(1),[query,setQuery]=useState(''),[category,setCategory]=useState('All'),[sort,setSort]=useState(false),[email,setEmail]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(null),[notice,setNotice]=useState('');
+ const [screen,setScreen]=useState(typeof window!=='undefined'&&(new URLSearchParams(window.location.search).has('code')||new URLSearchParams(window.location.search).has('error'))?'Login':'Splash'),[history,setHistory]=useState([]),[cart,setCart]=useState({}),[selected,setSelected]=useState(products[0]),[qty,setQty]=useState(1),[query,setQuery]=useState(''),[category,setCategory]=useState('All'),[sort,setSort]=useState(false),[email,setEmail]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(null),[notice,setNotice]=useState('');
  const go=next=>{setHistory(h=>[...h,screen]);setScreen(next)};
  const back=()=>{setScreen(history[history.length-1]||'Home');setHistory(h=>h.slice(0,-1));};
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{if(message){setMessage(null);return true;}if(history.length){back();return true;}return false});return()=>sub.remove()},[history,message]);
@@ -37,7 +37,7 @@ function AppContent(){
  const filtered=visibleProducts().filter(p=>(category==='All'||p.category===category)&&`${p.name} ${p.description}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort?(a.price??Infinity)-(b.price??Infinity):0);
  if(screen==='Splash')return <View style={[s.shell,{backgroundColor:cyan,overflow:'hidden'}]}><StatusBar style="light"/><Image source={require('./assets/welcome-hd.png')} resizeMode="cover" style={s.splashArtwork}/><SafeAreaView edges={['bottom']} style={s.splashActions}><Button title="Sign in" onPress={()=>go('Login')}/></SafeAreaView>{dialog()}</View>;
  function dialog(){return <Modal visible={!!message} transparent animationType="fade" onRequestClose={()=>setMessage(null)}><View style={s.overlay}><View style={s.dialog}><Text style={s.heading}>{message?.title}</Text><Text style={s.body}>{message?.body}</Text><Button title="Got it" onPress={()=>setMessage(null)}/></View></View></Modal>}
- return <SafeAreaView style={s.shell} edges={['top','bottom']}><StatusBar style="dark"/>{['Login','Verify'].includes(screen)?<AuthScreen step={screen} email={email} setEmail={setEmail} onBack={back} onRequest={()=>go('Verify')} onVerified={()=>{setHistory([]);setScreen('Home')}}/>:<>
+ return <SafeAreaView style={s.shell} edges={['top','bottom']}><StatusBar style="dark"/>{['Login','Verify'].includes(screen)?<ShopifyLoginScreen onBack={()=>{setHistory([]);setScreen('Splash')}}/>:<>
 
  <View style={[s.header,screen==='Detail'&&{backgroundColor:'#F3F3F3'}]}><View style={s.headerSide}>{['Detail','Cart','QuickOrder','Support'].includes(screen)&&<Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={back} style={s.headerAction}><Icon name="back" size={22}/></Pressable>}</View><Pressable accessibilityRole="button" accessibilityLabel="Home" onPress={()=>go('Home')} style={s.headerLogo}>{screen!=='Detail'&&<Image source={require('./assets/logo-brand.webp')} style={s.logo}/>}</Pressable><View style={s.headerSide}><Pressable accessibilityRole="button" accessibilityLabel={`Cart, ${count} items`} onPress={()=>go('Cart')} style={s.headerAction}><Icon name="cart" size={25} color="#343A40"/><View style={s.badge}><Text style={{fontSize:14,color:ink,fontWeight:'700'}}>{count}</Text></View></Pressable></View></View>
  {screen==='QuickOrder'?<QuickOrderScreen assets={assets} cart={cart} onCart={()=>go('Cart')} onAddBatch={items=>{setCart(c=>items.reduce((next,item)=>add(next,item.id,item.qty),c));}}/>:<>

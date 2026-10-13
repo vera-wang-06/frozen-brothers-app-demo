@@ -1,0 +1,8 @@
+Shopify real login read-only test
+
+Unzip and upload the contents INSIDE the existing app folder on GitHub. Keep .github/workflows/pages.yml unchanged.
+After a successful deployment, open https://vera-wang-06.github.io/frozen-brothers-app-demo/ in a normal browser.
+Click Sign in > Continue with Shopify. Use vera.wang@frozenbrothers.com and enter the code yourself on Shopify.
+The app will return and display customer name and email. This confirms login and customer read access only. Company locations, B2B pricing and checkout remain unverified.
+No customer/shop/order mutations or private/Admin credentials are included. Login may update Shopify authentication logs. The Clear test session button only clears this app session; it does not sign you out of the existing Shopify website. Tokens stay in memory; refreshing requires a new login. The only sessionStorage item is the temporary PKCE verifier/state, removed after callback.
+The native app login will be configured separately; this package tests web login on the registered HTTPS GitHub address.
