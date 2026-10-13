@@ -4,6 +4,8 @@ const key='fb.oauth.pending';
 let accessToken=null;
 let verifiedCustomer=null;
 let allowedLocations=[];
+const variantsByLocation=new Map();
+let testCart=null,cartLocation=null,cartBusy=false;
 export function assertTestCustomer(customer){if(customer?.emailAddress?.emailAddress?.trim().toLowerCase()!=='vera.wang@frozenbrothers.com')throw new Error('This test is restricted to vera.wang@frozenbrothers.com. Please use that account.');}
 export function base64url(bytes){return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 export function validatePending(p,state,now=Date.now()){if(!p||p.state!==state||!p.verifier||now-p.created>600000||now<p.created)throw new Error('Login session expired or invalid. Please sign in again.');}
@@ -43,7 +45,7 @@ export async function readCustomer(){
  verifiedCustomer=data.data.customer;
  return verifiedCustomer;
 }
-export function clearLogin(){accessToken=null;verifiedCustomer=null;allowedLocations=[];callbackPromise=null;if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(key);}
+export function clearLogin(){accessToken=null;verifiedCustomer=null;allowedLocations=[];variantsByLocation.clear();testCart=null;cartLocation=null;callbackPromise=null;if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(key);}
 
 async function customerQuery(query,variables={}){
  assertTestCustomer(verifiedCustomer);
@@ -76,5 +78,44 @@ export async function readLocationProducts(locationId,after=null){
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables:{buyer:{customerAccessToken:accessToken,companyLocationId:locationId},after}})});
  const data=await res.json();
  if(!res.ok||data.errors)throw new Error('Could not read products with your company location and customer pricing. No base-price fallback is used.');
+ const variants=variantsByLocation.get(locationId)||new Map();
+ for(const p of data.data.products.nodes)for(const v of p.variants.nodes)variants.set(v.id,v);
+ variantsByLocation.set(locationId,variants);
  return data.data.products;
+}
+
+export function validQuantity(q,rule){return Number.isSafeInteger(q)&&q>=rule.minimum&&q%rule.increment===0&&(rule.maximum==null||q<=rule.maximum);}
+const cartFields=`id totalQuantity buyerIdentity { purchasingCompany { location { id } } } cost { subtotalAmount { amount currencyCode } totalAmount { amount currencyCode } totalTaxAmount { amount currencyCode } } lines(first:100) { pageInfo { hasNextPage } nodes { id quantity merchandise { ... on ProductVariant { id title product { title } quantityRule { minimum maximum increment } } } cost { amountPerQuantity { amount currencyCode } totalAmount { amount currencyCode } } } }`;
+export function resetTestCart(){if(cartBusy)throw new Error('Wait for the cart request to finish.');testCart=null;cartLocation=null;}
+export async function changeTestCart(locationId,action,variantId,quantity){
+ assertTestCustomer(verifiedCustomer);
+ if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Please select your authorized company location.');
+ if(cartBusy)throw new Error('A cart request is already running.');
+ if(testCart&&cartLocation!==locationId)throw new Error('Start a separate test cart for the new location.');
+ if(!['add','update','remove'].includes(action))throw new Error('Unsupported cart action.');
+ const variant=variantsByLocation.get(locationId)?.get(variantId);
+ if(!variant)throw new Error('Select a product returned for this location.');
+ const line=testCart?.lines.nodes.find(l=>l.merchandise.id===variantId);
+ const target=action==='add'?(line?.quantity||0)+quantity:quantity;
+ if(action!=='remove'&&(!variant.availableForSale||!validQuantity(target,variant.quantityRule)))throw new Error('Quantity must follow the product minimum, increment and maximum.');
+ if(action!=='add'&&!line)throw new Error('Cart line not found.');
+ let operation,query,variables;
+ if(!testCart){operation='cartCreate';query=`mutation TestCart($input:CartInput!) { cartCreate(input:$input) { cart { ${cartFields} } userErrors { message } warnings { message } } }`;variables={input:{buyerIdentity:{customerAccessToken:accessToken,companyLocationId:locationId},lines:[{merchandiseId:variantId,quantity:target}]}};}
+ else if(action==='remove'){operation='cartLinesRemove';query=`mutation TestRemove($cartId:ID!,$lineIds:[ID!]!) { cartLinesRemove(cartId:$cartId,lineIds:$lineIds) { cart { ${cartFields} } userErrors { message } warnings { message } } }`;variables={cartId:testCart.id,lineIds:[line.id]};}
+ else if(line){operation='cartLinesUpdate';query=`mutation TestUpdate($cartId:ID!,$lines:[CartLineUpdateInput!]!) { cartLinesUpdate(cartId:$cartId,lines:$lines) { cart { ${cartFields} } userErrors { message } warnings { message } } }`;variables={cartId:testCart.id,lines:[{id:line.id,quantity:target}]};}
+ else{operation='cartLinesAdd';query=`mutation TestAdd($cartId:ID!,$lines:[CartLineInput!]!) { cartLinesAdd(cartId:$cartId,lines:$lines) { cart { ${cartFields} } userErrors { message } warnings { message } } }`;variables={cartId:testCart.id,lines:[{merchandiseId:variantId,quantity:target}]};}
+ cartBusy=true;
+ try{
+ const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables})});
+ const data=await res.json(),payload=data.data?.[operation];
+ if(!res.ok||data.errors||!payload)throw new Error('Shopify cart request failed. No automatic retry was made.');
+ if(payload.cart){
+  if(payload.cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){testCart=null;throw new Error('Shopify did not confirm the selected company location. Cart testing stopped.');}
+  testCart=payload.cart;cartLocation=locationId;
+ }
+ if(payload.userErrors.length)throw new Error(payload.userErrors.map(e=>e.message).join(' '));
+ if(!testCart)throw new Error('Shopify did not return a cart.');
+ if(testCart.lines.pageInfo.hasNextPage)throw new Error('Cart exceeds 100 lines; stop this test.');
+ return {cart:testCart,warnings:payload.warnings.map(w=>w.message)};
+ }finally{cartBusy=false;}
 }
