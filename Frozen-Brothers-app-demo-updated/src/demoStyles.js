@@ -2,7 +2,7 @@ import {StyleSheet} from 'react-native';
 import {theme} from './theme';
 const ink=theme.ink,cyan=theme.brand;
 const s=StyleSheet.create({
- headerSide:{width:36,alignItems:'center'},headerLogo:{position:'absolute',left:'50%',marginLeft:-25,width:50,alignItems:'center'},
+ headerSide:{width:36,alignItems:'center'},headerLogo:{position:'absolute',left:'50%',marginLeft:-43,width:86,alignItems:'center'},
  detailBrand:{fontSize:16,fontWeight:'600',color:'#7A7A7A',marginBottom:14},detailTitle:{fontSize:28,lineHeight:34,fontWeight:'700',color:ink,maxWidth:300},detailHero:{flexDirection:'row',minHeight:194,position:'relative',marginTop:4},detailFacts:{width:'44%',paddingTop:24,zIndex:1},detailLabel:{fontSize:14,fontWeight:'600',color:'#7A7A7A',marginBottom:6},detailPrice:{fontSize:20,color:ink,marginBottom:18},detailSize:{fontSize:17,color:ink,lineHeight:24},detailImage:{position:'absolute',right:-3,top:-7,width:'57%',height:182,resizeMode:'contain'},detailBody:{paddingHorizontal:24,paddingTop:24,paddingBottom:14},detailAbout:{fontSize:15,fontWeight:'600',color:ink,marginBottom:14},detailCopy:{fontSize:17,color:'#526F82',lineHeight:24},detailActions:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:22,marginBottom:14},detailFrequent:{fontSize:16,fontWeight:'800',color:ink,marginBottom:13},
 
  splashArtwork:{position:'absolute',top:0,left:0,width:'100%',height:'100%'},splashUpper:{position:'absolute',top:0,left:0,width:'100%',height:'78%'},splashFooter:{position:'absolute',bottom:0,left:0,width:'100%',height:'22%'},splashActions:{position:'absolute',bottom:'11%',left:32,right:32},loginBack:{position:'absolute',top:14,left:24,width:44,height:44,justifyContent:'center'},
