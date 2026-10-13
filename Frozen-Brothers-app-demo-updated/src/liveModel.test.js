@@ -1,0 +1,5 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {matchesCategory,initialQuantity,costAdjustment} from './liveModel.js';
+test('live catalogue filters retain products and distinguish brand/accessories',()=>{assert.equal(matchesCategory({title:'Flat Lids - Box 2000'},'Accessories'),true);assert.equal(matchesCategory({title:'Tango Ice Blast Cherry'},'Coke & Fanta'),false);assert.equal(matchesCategory({title:'Fanta Frozen Lemon'},'Coke & Fanta'),true);assert.equal(matchesCategory({title:'anything'},'All'),true)});
+test('cart adjustment uses cents and never labels differences as confirmed shipping',()=>{const m=n=>({amount:String(n),currencyCode:'GBP'});assert.deepEqual(costAdjustment({subtotalAmount:m(90.56),totalAmount:m(105.56),totalTaxAmount:null}),m('15.00'));assert.deepEqual(costAdjustment({subtotalAmount:m(210.59),totalAmount:m(210.59)}),m('0.00'));assert.deepEqual(costAdjustment({subtotalAmount:m(10),totalAmount:m(27),totalTaxAmount:m(2)}),m('15.00'));assert.equal(initialQuantity({quantityRule:{minimum:5,increment:3}}),6)});

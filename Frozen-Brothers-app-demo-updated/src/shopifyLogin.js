@@ -74,7 +74,7 @@ export async function readLocations(){
 export async function readLocationProducts(locationId,after=null){
  assertTestCustomer(verifiedCustomer);
  if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Choose a location returned for your test account.');
- const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
+ const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title vendor productType description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables:{buyer:{customerAccessToken:accessToken,companyLocationId:locationId},after}})});
  const data=await res.json();
  if(!res.ok||data.errors)throw new Error('Could not read products with your company location and customer pricing. No base-price fallback is used.');
@@ -85,7 +85,7 @@ export async function readLocationProducts(locationId,after=null){
 }
 
 export function validQuantity(q,rule){return Number.isSafeInteger(q)&&q>=rule.minimum&&q%rule.increment===0&&(rule.maximum==null||q<=rule.maximum);}
-const cartFields=`id totalQuantity buyerIdentity { purchasingCompany { location { id } } } cost { subtotalAmount { amount currencyCode } totalAmount { amount currencyCode } totalTaxAmount { amount currencyCode } } lines(first:100) { pageInfo { hasNextPage } nodes { id quantity merchandise { ... on ProductVariant { id title product { title } quantityRule { minimum maximum increment } } } cost { amountPerQuantity { amount currencyCode } totalAmount { amount currencyCode } } } }`;
+const cartFields=`id totalQuantity buyerIdentity { purchasingCompany { location { id } } } cost { subtotalAmount { amount currencyCode } totalAmount { amount currencyCode } totalTaxAmount { amount currencyCode } } lines(first:100) { pageInfo { hasNextPage } nodes { id quantity merchandise { ... on ProductVariant { id title product { title description featuredImage { url } } quantityRule { minimum maximum increment } } } cost { amountPerQuantity { amount currencyCode } totalAmount { amount currencyCode } } } }`;
 export function resetTestCart(){if(cartBusy)throw new Error('Wait for the cart request to finish.');testCart=null;cartLocation=null;cartBlocked=false;}
 export async function changeTestCart(locationId,action,variantId,quantity){
  assertTestCustomer(verifiedCustomer);
