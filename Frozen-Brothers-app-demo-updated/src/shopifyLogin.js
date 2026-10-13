@@ -108,8 +108,18 @@ export async function changeTestCart(locationId,action,variantId,quantity){
  cartBusy=true;
  try{
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables})});
- const data=await res.json(),payload=data.data?.[operation];
+ const data=await res.json();let payload=data.data?.[operation];
  if(!res.ok||data.errors||!payload)throw new Error('Shopify cart request failed. No automatic retry was made.');
+ // Some carts need an explicit identity update after creation. Reuse the
+ // same cart; never recreate or accept a missing location as confirmation.
+ if(operation==='cartCreate'&&payload.cart&&!payload.userErrors.length&&payload.cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){
+  const identityQuery=`mutation BindTestBuyer($cartId:ID!,$buyerIdentity:CartBuyerIdentityInput!) { cartBuyerIdentityUpdate(cartId:$cartId,buyerIdentity:$buyerIdentity) { cart { ${cartFields} } userErrors { message } warnings { message } } }`;
+  const identityRes=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query:identityQuery,variables:{cartId:payload.cart.id,buyerIdentity:{customerAccessToken:accessToken,companyLocationId:locationId}}})});
+  const identityData=await identityRes.json();
+  if(!identityRes.ok||identityData.errors||!identityData.data?.cartBuyerIdentityUpdate){cartBlocked=true;throw new Error('Explicit cart buyer association failed. Cart testing stopped.');}
+  const bound=identityData.data.cartBuyerIdentityUpdate;
+  payload={...bound,warnings:[...payload.warnings,...bound.warnings]};
+ }
  const errors=payload.userErrors.map(e=>e.message),warnings=payload.warnings.map(w=>w.message);
  if(errors.length)throw new Error('Shopify: '+errors.join(' ')+(warnings.length?' Warnings: '+warnings.join(' '):''));
  if(payload.cart){
