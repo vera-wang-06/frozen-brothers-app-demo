@@ -6,7 +6,7 @@ let verifiedCustomer=null;
 let allowedLocations=[];
 const variantsByLocation=new Map();
 let testCart=null,cartLocation=null,cartBusy=false,cartBlocked=false;
-export function assertTestCustomer(customer){if(customer?.emailAddress?.emailAddress?.trim().toLowerCase()!=='vera.wang@frozenbrothers.com')throw new Error('This test is restricted to vera.wang@frozenbrothers.com. Please use that account.');}
+export function assertAuthenticatedCustomer(customer){if(!customer?.id||!customer?.emailAddress?.emailAddress)throw new Error('Please sign in with Shopify to access your account.');}
 export function base64url(bytes){return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 export function validatePending(p,state,now=Date.now()){if(!p||p.state!==state||!p.verifier||now-p.created>600000||now<p.created)throw new Error('Login session expired or invalid. Please sign in again.');}
 export async function startLogin(){
@@ -41,14 +41,15 @@ export async function readCustomer(){
  const res=await fetch(config.api,{method:'POST',headers:{'Content-Type':'application/json',Authorization:accessToken},body:JSON.stringify({query:'query LoginCheck { customer { id displayName firstName lastName emailAddress { emailAddress } } }'})});
  const data=await res.json();
  if(!res.ok||data.errors||!data.data?.customer)throw new Error('Login completed, but customer details could not be read. Check customer_read_customers permission.');
- assertTestCustomer(data.data.customer);
+ assertAuthenticatedCustomer(data.data.customer);
+ variantsByLocation.clear();allowedLocations=[];testCart=null;cartLocation=null;cartBlocked=false;
  verifiedCustomer=data.data.customer;
  return verifiedCustomer;
 }
 export function clearLogin(){accessToken=null;verifiedCustomer=null;allowedLocations=[];variantsByLocation.clear();testCart=null;cartLocation=null;cartBlocked=false;callbackPromise=null;if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(key);}
 
 async function customerQuery(query,variables={}){
- assertTestCustomer(verifiedCustomer);
+ assertAuthenticatedCustomer(verifiedCustomer);
  if(!accessToken)throw new Error('Please sign in again.');
  const res=await fetch(config.api,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json',Authorization:accessToken},body:JSON.stringify({query,variables})});
  const data=await res.json();
@@ -72,8 +73,8 @@ export async function readLocations(){
  return allowedLocations;
 }
 export async function readLocationProducts(locationId,after=null){
- assertTestCustomer(verifiedCustomer);
- if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Choose a location returned for your test account.');
+ assertAuthenticatedCustomer(verifiedCustomer);
+ if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Choose a location linked to your account.');
  const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title vendor productType description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables:{buyer:{customerAccessToken:accessToken,companyLocationId:locationId},after}})});
  const data=await res.json();
@@ -88,7 +89,7 @@ export function validQuantity(q,rule){return Number.isSafeInteger(q)&&q>=rule.mi
 const cartFields=`id totalQuantity buyerIdentity { purchasingCompany { location { id } } } cost { subtotalAmount { amount currencyCode } totalAmount { amount currencyCode } totalTaxAmount { amount currencyCode } } lines(first:100) { pageInfo { hasNextPage } nodes { id quantity merchandise { ... on ProductVariant { id title product { title description featuredImage { url } } quantityRule { minimum maximum increment } } } cost { amountPerQuantity { amount currencyCode } totalAmount { amount currencyCode } } } }`;
 export function resetTestCart(){if(cartBusy)throw new Error('Wait for the cart request to finish.');testCart=null;cartLocation=null;cartBlocked=false;}
 export async function changeTestCart(locationId,action,variantId,quantity){
- assertTestCustomer(verifiedCustomer);
+ assertAuthenticatedCustomer(verifiedCustomer);
  if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Please select your authorized company location.');
  if(cartBusy)throw new Error('A cart request is already running.');
  if(cartBlocked)throw new Error('Cart identity was not confirmed. Please sign in again before retrying.');
@@ -149,7 +150,7 @@ export async function changeTestCart(locationId,action,variantId,quantity){
 }
 
 export async function readTestProfile(locationId){
- assertTestCustomer(verifiedCustomer);
+ assertAuthenticatedCustomer(verifiedCustomer);
  if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
  const data=await customerQuery('query TestProfile { customer { firstName lastName emailAddress { emailAddress } companyContacts(first:100) { nodes { locations(first:100) { nodes { id shippingAddress { formattedAddress } billingAddress { formattedAddress } buyerExperienceConfiguration { payNowOnly } } } } } } }');
  const selected=data.customer.companyContacts.nodes.flatMap(c=>c.locations.nodes).find(l=>l.id===locationId);
@@ -157,7 +158,7 @@ export async function readTestProfile(locationId){
  return {customer:data.customer,location:selected};
 }
 export async function readTestOrders(locationId){
- assertTestCustomer(verifiedCustomer);
+ assertAuthenticatedCustomer(verifiedCustomer);
  if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
  const data=await customerQuery('query TestOrderHistory { customer { orders(first:20,reverse:true,sortKey:PROCESSED_AT) { nodes { id name processedAt totalPrice { amount currencyCode } purchasingEntity { ... on PurchasingCompany { location { id } } } lineItems(first:20) { nodes { title quantity productId variantId image { url } } } } } } }');
  return data.customer.orders.nodes.filter(o=>o.purchasingEntity?.location?.id===locationId);
