@@ -2,6 +2,7 @@
 export const config={clientId:'41c1d1ab-175a-44cb-839c-43fdfb1ce861',redirect:'https://vera-wang-06.github.io/frozen-brothers-app-demo/',account:'https://account.frozenstore.com',api:'https://account.frozenstore.com/customer/api/2026-10/graphql'};
 const key='fb.oauth.pending';
 let accessToken=null;
+let idToken=null;
 let verifiedCustomer=null;
 let allowedLocations=[];
 const variantsByLocation=new Map();
@@ -34,7 +35,8 @@ async function complete(){
  const data=await res.json();
  if(!data.access_token)throw new Error('Shopify did not return a login token.');
  accessToken=data.access_token;
- try{return await readCustomer();}catch(e){accessToken=null;throw e;}
+ idToken=data.id_token||null;
+ try{return await readCustomer();}catch(e){accessToken=null;idToken=null;throw e;}
 }
 export async function readCustomer(){
  if(!accessToken)throw new Error('Please sign in again.');
@@ -46,7 +48,7 @@ export async function readCustomer(){
  verifiedCustomer=data.data.customer;
  return verifiedCustomer;
 }
-export function clearLogin(){accessToken=null;verifiedCustomer=null;allowedLocations=[];variantsByLocation.clear();testCart=null;cartLocation=null;cartBlocked=false;callbackPromise=null;if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(key);}
+export function clearLogin(){accessToken=null;idToken=null;verifiedCustomer=null;allowedLocations=[];variantsByLocation.clear();testCart=null;cartLocation=null;cartBlocked=false;callbackPromise=null;if(typeof sessionStorage!=='undefined')sessionStorage.removeItem(key);}
 
 async function customerQuery(query,variables={}){
  assertAuthenticatedCustomer(verifiedCustomer);
@@ -75,12 +77,13 @@ export async function readLocations(){
 export async function readLocationProducts(locationId,after=null){
  assertAuthenticatedCustomer(verifiedCustomer);
  if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Choose a location linked to your account.');
- const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title vendor productType description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
+ const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title handle vendor productType description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables:{buyer:{customerAccessToken:accessToken,companyLocationId:locationId},after}})});
  const data=await res.json();
  if(!res.ok||data.errors)throw new Error('Could not read products with your company location and customer pricing. No base-price fallback is used.');
+ for(const p of data.data.products.nodes)if(p.handle==='need-help-accessing-your-account')p.accountAccessHelp=true;
  const variants=variantsByLocation.get(locationId)||new Map();
- for(const p of data.data.products.nodes)for(const v of p.variants.nodes)variants.set(v.id,v);
+ for(const p of data.data.products.nodes.filter(p=>!p.accountAccessHelp))for(const v of p.variants.nodes)variants.set(v.id,v);
  variantsByLocation.set(locationId,variants);
  return data.data.products;
 }
@@ -162,4 +165,21 @@ export async function readTestOrders(locationId){
  if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
  const data=await customerQuery('query TestOrderHistory { customer { orders(first:20,reverse:true,sortKey:PROCESSED_AT) { nodes { id name processedAt totalPrice { amount currencyCode } purchasingEntity { ... on PurchasingCompany { location { id } } } lineItems(first:20) { nodes { title quantity productId variantId image { url } } } } } } }');
  return data.customer.orders.nodes.filter(o=>o.purchasingEntity?.location?.id===locationId);
+}
+
+export async function readAccountAccessHelp(){
+ assertAuthenticatedCustomer(verifiedCustomer);
+ const response=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query:'query AccessHelp { product(handle:"need-help-accessing-your-account") { id title description featuredImage { url } variants(first:1) { nodes { price { amount currencyCode } } } } }'})});
+ const result=await response.json();
+ if(!response.ok||result.errors||!result.data?.product)throw new Error('The account help page could not be loaded. Please contact customer services.');
+ return {...result.data.product,accountAccessHelp:true};
+}
+
+export function signOutShopify(){
+ if(typeof window==='undefined')throw new Error('Shopify sign out is available in the web app.');
+ if(!idToken)throw new Error('Please sign in again to enable Shopify sign out.');
+ const url=new URL(config.account+'/authentication/logout');
+ url.search=new URLSearchParams({id_token_hint:idToken,post_logout_redirect_uri:config.redirect}).toString();
+ clearLogin();
+ window.location.assign(url.href);
 }
