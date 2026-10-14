@@ -183,3 +183,22 @@ export function signOutShopify(){
  clearLogin();
  window.location.assign(url.href);
 }
+
+// Fetch a fresh Shopify-hosted checkout URL only for the authorized test pilot.
+export async function readTestCheckout(locationId){
+ assertAuthenticatedCustomer(verifiedCustomer);
+ if(verifiedCustomer.emailAddress.emailAddress.toLowerCase()!=='vera.wang@frozenbrothers.com')throw new Error('Checkout testing is currently available only for the test account.');
+ if(!accessToken||cartBusy||cartBlocked||!testCart||cartLocation!==locationId||!allowedLocations.some(l=>l.id===locationId))throw new Error('Choose your authorized location and wait for the cart to finish updating.');
+ if(!testCart.id.includes('?key='))throw new Error('Cart verification is missing. Please sign in again.');
+ cartBusy=true;
+ try{
+  const response=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query:`query TestCheckout($id:ID!) { cart(id:$id) { id totalQuantity checkoutUrl buyerIdentity { purchasingCompany { location { id } } } } }`,variables:{id:testCart.id}})});
+  const data=await response.json(),cart=data.data?.cart;
+  if(!response.ok||data.errors||!cart)throw new Error('Could not open Shopify checkout. Please try again.');
+  if(cart.id!==testCart.id||cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){cartBlocked=true;throw new Error('Shopify did not confirm the selected location. Checkout stopped.');}
+  if(!cart.totalQuantity)throw new Error('Your cart is empty.');
+  const url=new URL(cart.checkoutUrl);
+  if(url.protocol!=='https:'||url.username||url.password||!['frozenbrothers.com','www.frozenbrothers.com','frozenstore.com','www.frozenstore.com','frozen-brothers-online.myshopify.com'].includes(url.hostname))throw new Error('Shopify returned an unexpected checkout address. Checkout stopped.');
+  return url.href;
+ }finally{cartBusy=false;}
+}

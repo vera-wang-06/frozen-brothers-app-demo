@@ -24,3 +24,34 @@ test('missing create identity is explicitly bound on the same cart before accept
  else throw new Error('Unexpected request');return {ok:true,json:async()=>data};};
  try{await api.finishLogin();await api.readLocations();await api.readLocationProducts(location);const result=await api.changeTestCart(location,'add',variant,1);assert.equal(result.cart.buyerIdentity.purchasingCompany.location.id,location);const writes=requests.filter(r=>r.body?.query.startsWith('mutation'));assert.equal(writes.length,2);assert.equal(writes[1].body.variables.cartId,cart.id);assert.equal(writes[1].body.variables.buyerIdentity.companyLocationId,location);assert.equal(writes.filter(r=>r.body.query.includes('cartCreate')).length,1);api.signOutShopify();const logout=new URL(logoutUrl);assert.equal(logout.origin,'https://account.frozenstore.com');assert.equal(logout.pathname,'/authentication/logout');assert.equal(logout.searchParams.get('id_token_hint'),'test-id-token');assert.equal(logout.searchParams.get('post_logout_redirect_uri'),api.config.redirect);await assert.rejects(()=>api.readLocationProducts(location));}finally{api.clearLogin();Object.assign(globalThis,saved)}
 });
+
+test('checkout uses the current private cart, rejects wrong location, empty cart and foreign URL, and allows only the test account',async()=>{
+ const api=await import('./shopifyLogin.js?checkout-test');
+ const saved={fetch:globalThis.fetch,window:globalThis.window,sessionStorage:globalThis.sessionStorage};
+ const location='gid://shopify/CompanyLocation/123',variant='gid://shopify/ProductVariant/123';
+ const cart={id:'gid://shopify/Cart/test?key=secret',totalQuantity:1,buyerIdentity:{purchasingCompany:{location:{id:location}}},lines:{nodes:[],pageInfo:{hasNextPage:false}}};
+ let checkoutCart={...cart,checkoutUrl:'https://frozenbrothers.com/cart/c/test'},email='vera.wang@frozenbrothers.com';const requests=[];
+ globalThis.window={location:{search:'?code=test&state=state',pathname:'/'},history:{replaceState(){}}};
+ globalThis.sessionStorage={getItem:()=>JSON.stringify({state:'state',verifier:'test',created:Date.now()}),removeItem(){}};
+ globalThis.fetch=async(url,options)=>{
+  const body=options.headers['Content-Type']==='application/json'?JSON.parse(options.body):null;requests.push(body);let data;
+  if(url.endsWith('/token'))data={access_token:'test-token'};
+  else if(body.query.includes('LoginCheck'))data={data:{customer:{id:'gid://shopify/Customer/123',emailAddress:{emailAddress:email}}}};
+  else if(body.query.includes('query Locations'))data={data:{customer:{companyContacts:{pageInfo:{hasNextPage:false},nodes:[{company:{name:'Test'},locations:{pageInfo:{hasNextPage:false},nodes:[{id:location,name:'Test'}]}}]}}}};
+  else if(body.query.includes('TestProducts'))data={data:{products:{nodes:[{variants:{nodes:[{id:variant,availableForSale:true,quantityRule:{minimum:1,increment:1,maximum:null}}]}}]}}};
+  else if(body.query.includes('mutation TestCart'))data={data:{cartCreate:{cart,userErrors:[],warnings:[]}}};
+  else if(body.query.includes('VerifyTestCart'))data={data:{cart}};
+  else if(body.query.includes('query TestCheckout'))data={data:{cart:checkoutCart}};
+  else throw new Error('Unexpected API call');return {ok:true,json:async()=>data};
+ };
+ try{
+  await api.finishLogin();await api.readLocations();await api.readLocationProducts(location);await api.changeTestCart(location,'add',variant,1);
+  const before=requests.length;
+  assert.equal(await api.readTestCheckout(location),'https://frozenbrothers.com/cart/c/test');
+  assert.equal(requests.at(-1).variables.id,cart.id);assert.ok(requests.slice(before).every(r=>r.query.startsWith('query')));
+  checkoutCart={...cart,totalQuantity:0,checkoutUrl:'https://frozenbrothers.com/cart/c/test'};await assert.rejects(()=>api.readTestCheckout(location),/empty/);
+  checkoutCart={...cart,checkoutUrl:'https://example.com/checkout'};await assert.rejects(()=>api.readTestCheckout(location),/unexpected/);
+  checkoutCart={...cart,buyerIdentity:{purchasingCompany:{location:{id:'wrong'}}},checkoutUrl:'https://frozenbrothers.com/cart/c/test'};await assert.rejects(()=>api.readTestCheckout(location),/selected location/);
+  email='other@example.com';await api.readCustomer();const count=requests.length;await assert.rejects(()=>api.readTestCheckout(location),/only for the test account/);assert.equal(requests.length,count);
+ }finally{api.clearLogin();Object.assign(globalThis,saved)}
+});
