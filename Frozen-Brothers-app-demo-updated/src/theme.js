@@ -7,5 +7,5 @@ export const theme={
  ink:'#092D49',
  muted:'#526F7C',
  border:'#D5E8ED',
- type:{caption:14,body:17,label:16,section:19,title:24,product:28}
+ type:{caption:12,body:14,label:14,section:17,title:20,product:26}
 };
