@@ -5,14 +5,19 @@
   "main": "index.js",
   "scripts": {
     "start": "expo start",
-    "ios": "expo start --ios",
-    "android": "expo start --android",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
     "web": "expo start --web",
-    "test": "node --test src/*.test.js"
+    "test": "node --test src/*.test.js",
+    "ios:simulator": "expo run:ios --no-build-cache"
   },
   "dependencies": {
+    "@shopify/checkout-sheet-kit": "^3.9.1",
     "expo": "~57.0.27",
+    "expo-auth-session": "~57.0.15",
+    "expo-crypto": "~57.0.4",
     "expo-status-bar": "~57.0.1",
+    "expo-web-browser": "~57.0.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",

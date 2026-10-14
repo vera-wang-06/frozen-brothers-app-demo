@@ -4,3 +4,13 @@ export function initialQuantity(v){const r=v.quantityRule;return Math.ceil(r.min
 export function costAdjustment(cost){if(!cost)return null;const subtotal=cost.subtotalAmount,total=cost.totalAmount,tax=cost.totalTaxAmount;if(!subtotal||!total||subtotal.currencyCode!==total.currencyCode||(tax&&tax.currencyCode!==total.currencyCode))return null;return {amount:((Math.round(Number(total.amount)*100)-Math.round(Number(subtotal.amount)*100)-(tax?Math.round(Number(tax.amount)*100):0))/100).toFixed(2),currencyCode:total.currencyCode};}
 
 export function visibleCategories(products){return categories.filter(c=>c==='All'||products.some(p=>!p.accountAccessHelp&&matchesCategory(p,c)));}
+
+// At the minimum valid quantity, decrement removes the whole line rather than
+// sending a quantity that violates the buyer's purchasing rules.
+export function cartStep(quantity,rule,direction){
+ const increment=rule?.increment||1,minimum=rule?.minimum||1;
+ if(direction<0&&quantity-increment<minimum)return {action:'remove',quantity:0};
+ const next=quantity+direction*increment;
+ if(rule?.maximum!=null&&next>rule.maximum)return null;
+ return {action:'update',quantity:next};
+}

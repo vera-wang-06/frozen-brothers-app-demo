@@ -1,3 +1,5 @@
+import './src/mobileSetup';
+import CheckoutRoot from './src/CheckoutRoot';
 import {theme} from './src/theme';
 import s from './src/demoStyles';
 import LiveStoreScreen from './src/LiveStoreScreen';
@@ -26,7 +28,7 @@ function AppContent(){
 
  const {width:windowWidth}=useWindowDimensions();
  const heroHeight=(Math.min(390,windowWidth)-44)*264/585;
- const [screen,setScreen]=useState(typeof window!=='undefined'&&(new URLSearchParams(window.location.search).has('code')||new URLSearchParams(window.location.search).has('error'))?'Login':'Splash'),[history,setHistory]=useState([]),[cart,setCart]=useState({}),[selected,setSelected]=useState(products[0]),[qty,setQty]=useState(1),[query,setQuery]=useState(''),[category,setCategory]=useState('All'),[sort,setSort]=useState(false),[email,setEmail]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(null),[notice,setNotice]=useState('');
+ const [screen,setScreen]=useState(typeof window!=='undefined'&&window.location&&(new URLSearchParams(window.location.search).has('code')||new URLSearchParams(window.location.search).has('error'))?'Login':'Splash'),[history,setHistory]=useState([]),[cart,setCart]=useState({}),[selected,setSelected]=useState(products[0]),[qty,setQty]=useState(1),[query,setQuery]=useState(''),[category,setCategory]=useState('All'),[sort,setSort]=useState(false),[email,setEmail]=useState(''),[error,setError]=useState(''),[message,setMessage]=useState(null),[notice,setNotice]=useState('');
  const go=next=>{setHistory(h=>[...h,screen]);setScreen(next)};
  const back=()=>{setScreen(history[history.length-1]||'Home');setHistory(h=>h.slice(0,-1));};
  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{if(message){setMessage(null);return true;}if(history.length){back();return true;}return false});return()=>sub.remove()},[history,message]);
@@ -39,7 +41,7 @@ function AppContent(){
  const search=<View style={s.search}><Icon name="search" size={17} color="#8C9BA2"/><TextInput accessibilityLabel="Search products" placeholder="Search" placeholderTextColor="#728C98" value={query} onChangeText={setQuery} onSubmitEditing={()=>go('Products')} returnKeyType="search" style={{flex:1,color:ink}}/>{query!==''&&<Pressable accessibilityLabel="Clear search" onPress={()=>setQuery('')}><Icon name="close" size={16} color="#728C98"/></Pressable>}</View>;
  const filtered=visibleProducts().filter(p=>(category==='All'||p.category===category)&&`${p.name} ${p.description}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>sort?(a.price??Infinity)-(b.price??Infinity):0);
  if(liveCustomer)return <LiveStoreScreen customer={liveCustomer} onSignOut={()=>{setLiveCustomer(null);setHistory([]);setScreen('Splash')}}/>;
- if(screen==='Splash')return <View style={[s.shell,{backgroundColor:cyan,overflow:'hidden'}]}><StatusBar style="light"/><Image source={require('./assets/welcome-hd.png')} resizeMode="cover" style={s.splashArtwork}/><SafeAreaView edges={['bottom']} style={s.splashActions}><Button large title="Sign in" onPress={()=>go('Login')}/></SafeAreaView>{dialog()}</View>;
+ if(screen==='Splash')return <View style={[s.shell,{maxWidth:Platform.OS==='web'?390:'100%',backgroundColor:cyan,overflow:'hidden'}]}><StatusBar style="light"/><Image source={require('./assets/welcome-hd.png')} resizeMode="cover" style={s.splashArtwork}/><SafeAreaView edges={['bottom']} style={s.splashActions}><Button large title="Sign in" onPress={()=>go('Login')}/></SafeAreaView>{dialog()}</View>;
  function dialog(){return <Modal visible={!!message} transparent animationType="fade" onRequestClose={()=>setMessage(null)}><View style={s.overlay}><View style={s.dialog}><Text style={s.heading}>{message?.title}</Text><Text style={s.body}>{message?.body}</Text><Button title="Got it" onPress={()=>setMessage(null)}/></View></View></Modal>}
  return <SafeAreaView style={s.shell} edges={['top','bottom']}><StatusBar style="dark"/>{['Login','Verify'].includes(screen)?<ShopifyLoginScreen onSuccess={setLiveCustomer} onBack={()=>{setHistory([]);setScreen('Splash')}}/>:<>
 
@@ -59,4 +61,4 @@ function AppContent(){
  {notice!==''&&<View accessibilityLiveRegion="polite" style={s.toast}><Text style={{color:'#fff'}}>{notice}</Text></View>}{dialog()}
  </SafeAreaView>;
 }
-export default function App(){return <SafeAreaProvider><View style={{flex:1,backgroundColor:theme.canvas,alignItems:'center'}}><AppContent/></View></SafeAreaProvider>}
+export default function App(){return <CheckoutRoot><SafeAreaProvider><View style={{flex:1,backgroundColor:theme.canvas,alignItems:'center'}}><AppContent/></View></SafeAreaProvider></CheckoutRoot>}

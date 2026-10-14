@@ -46,6 +46,7 @@ test('checkout uses the current private cart, rejects wrong location, empty cart
  };
  try{
   await api.finishLogin();await api.readLocations();await api.readLocationProducts(location);await api.changeTestCart(location,'add',variant,1);
+  assert.equal(requests.filter(r=>r?.query?.includes('VerifyTestCart')).length,0,'Confirmed mutation identity avoids an extra read');
   const before=requests.length;
   assert.equal(await api.readTestCheckout(location),'https://frozenbrothers.com/cart/c/test');
   assert.equal(requests.at(-1).variables.id,cart.id);assert.ok(requests.slice(before).every(r=>r.query.startsWith('query')));
@@ -54,4 +55,20 @@ test('checkout uses the current private cart, rejects wrong location, empty cart
   checkoutCart={...cart,buyerIdentity:{purchasingCompany:{location:{id:'wrong'}}},checkoutUrl:'https://frozenbrothers.com/cart/c/test'};await assert.rejects(()=>api.readTestCheckout(location),/selected location/);
   email='other@example.com';await api.readCustomer();const count=requests.length;await assert.rejects(()=>api.readTestCheckout(location),/only for the test account/);assert.equal(requests.length,count);
  }finally{api.clearLogin();Object.assign(globalThis,saved)}
+});
+
+test('native login exchanges the mobile callback and PKCE verifier; failed logout retains session and successful logout clears it',async()=>{
+ const api=await import('./shopifyLogin.js?mobile-test');const savedFetch=globalThis.fetch;let logoutFails=true,exchanges=[];
+ api.configureNativeLogin({authorize:async()=>({clientId:'mobile-public-id',redirect:'shop.25632473170.frozenbrothers://callback',code:'mobile-code',verifier:'mobile-verifier'}),logout:async token=>{assert.equal(token,'mobile-id-token');if(logoutFails)throw new Error('logout failed');}});
+ globalThis.fetch=async(url,options)=>{
+  if(url.endsWith('/token')){exchanges.push(new URLSearchParams(options.body));return {ok:true,json:async()=>({access_token:'mobile-token',id_token:'mobile-id-token'})};}
+  assert.equal(options.headers.Authorization,'mobile-token');return {ok:true,json:async()=>({data:{customer:{id:'gid://shopify/Customer/mobile',emailAddress:{emailAddress:'vera.wang@frozenbrothers.com'}}}})};
+ };
+ try{
+  assert.equal(await api.finishLogin(),null);
+  const customer=await api.startLogin();assert.equal(customer.id,'gid://shopify/Customer/mobile');
+  assert.equal(exchanges[0].get('client_id'),'mobile-public-id');assert.equal(exchanges[0].get('redirect_uri'),'shop.25632473170.frozenbrothers://callback');assert.equal(exchanges[0].get('code_verifier'),'mobile-verifier');assert.equal(exchanges[0].get('client_secret'),null);
+  await assert.rejects(()=>api.signOutShopify(),/logout failed/);await api.readCustomer();
+  logoutFails=false;await api.signOutShopify();await assert.rejects(()=>api.readCustomer(),/sign in again/);
+ }finally{api.clearLogin();globalThis.fetch=savedFetch;}
 });

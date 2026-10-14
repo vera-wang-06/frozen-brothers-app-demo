@@ -1,6 +1,9 @@
-// Public web client. No Admin/private credentials and no commerce mutations.
+// Public customer clients; no Admin/private credentials or order submission.
 export const config={clientId:'41c1d1ab-175a-44cb-839c-43fdfb1ce861',redirect:'https://vera-wang-06.github.io/frozen-brothers-app-demo/',account:'https://account.frozenstore.com',api:'https://account.frozenstore.com/customer/api/2026-10/graphql'};
 const key='fb.oauth.pending';
+let nativeLogin=null;
+export function configureNativeLogin(adapter){nativeLogin=adapter;}
+
 let accessToken=null;
 let idToken=null;
 let verifiedCustomer=null;
@@ -11,6 +14,7 @@ export function assertAuthenticatedCustomer(customer){if(!customer?.id||!custome
 export function base64url(bytes){return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 export function validatePending(p,state,now=Date.now()){if(!p||p.state!==state||!p.verifier||now-p.created>600000||now<p.created)throw new Error('Login session expired or invalid. Please sign in again.');}
 export async function startLogin(){
+ if(nativeLogin){const authorization=await nativeLogin.authorize();return exchangeAuthorization(authorization);}
  if(typeof window==='undefined'||window.location.origin!==new URL(config.redirect).origin||window.location.pathname!==new URL(config.redirect).pathname)throw new Error('Open the GitHub website to test Shopify login.');
  const verifier=base64url(crypto.getRandomValues(new Uint8Array(32))),state=base64url(crypto.getRandomValues(new Uint8Array(24)));
  const challenge=base64url(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier)));
@@ -22,7 +26,7 @@ export async function startLogin(){
 let callbackPromise;
 export function finishLogin(){return callbackPromise??(callbackPromise=complete());}
 async function complete(){
- if(typeof window==='undefined')return null;
+ if(nativeLogin||typeof window==='undefined')return null;
  const params=new URLSearchParams(window.location.search);
  if(!params.has('code')&&!params.has('error'))return null;
  const pending=JSON.parse(sessionStorage.getItem(key)||'null');
@@ -30,7 +34,10 @@ async function complete(){
  window.history.replaceState({},'',window.location.pathname);
  validatePending(pending,params.get('state'));
  if(params.has('error'))throw new Error('Shopify login was cancelled. Please try again.');
- const res=await fetch(config.account+'/authentication/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:config.clientId,code:params.get('code'),redirect_uri:config.redirect,code_verifier:pending.verifier}).toString()});
+ return exchangeAuthorization({clientId:config.clientId,code:params.get('code'),redirect:config.redirect,verifier:pending.verifier});
+}
+async function exchangeAuthorization({clientId,code,redirect,verifier}){
+ const res=await fetch(config.account+'/authentication/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'authorization_code',client_id:clientId,code,redirect_uri:redirect,code_verifier:verifier}).toString()});
  if(!res.ok)throw new Error('Shopify could not complete login. Check the callback URL and JavaScript origin.');
  const data=await res.json();
  if(!data.access_token)throw new Error('Shopify did not return a login token.');
@@ -123,7 +130,10 @@ export async function changeTestCart(locationId,action,variantId,quantity){
   return {cart:result.data.cart,requestId};
  }
  let cartReadRequest='not requested';
- if(payload.cart&&!payload.userErrors.length){const verified=await inspectCart(payload.cart.id);payload={...payload,cart:verified.cart};cartReadRequest=verified.requestId;}
+ if(payload.cart&&!payload.userErrors.length){
+  if(!payload.cart.id?.includes('?key=')||(testCart&&payload.cart.id!==testCart.id)){cartBlocked=true;throw new Error('Shopify returned an unverified cart. Testing stopped.');}
+  if(payload.cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){const verified=await inspectCart(payload.cart.id);payload={...payload,cart:verified.cart};cartReadRequest=verified.requestId;}
+ }
  // Some carts need an explicit identity update after creation. Reuse the
  // same cart; never recreate or accept a missing location as confirmation.
  if(operation==='cartCreate'&&payload.cart&&!payload.userErrors.length&&payload.cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){
@@ -163,7 +173,7 @@ export async function readTestProfile(locationId){
 export async function readTestOrders(locationId){
  assertAuthenticatedCustomer(verifiedCustomer);
  if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
- const data=await customerQuery('query TestOrderHistory { customer { orders(first:20,reverse:true,sortKey:PROCESSED_AT) { nodes { id name processedAt totalPrice { amount currencyCode } purchasingEntity { ... on PurchasingCompany { location { id } } } lineItems(first:20) { nodes { title quantity productId variantId image { url } } } } } } }');
+ const data=await customerQuery('query TestOrderHistory { customer { orders(first:20,reverse:true,sortKey:PROCESSED_AT) { nodes { id name processedAt cancelledAt fulfillmentStatus totalPrice { amount currencyCode } fulfillments(first:5) { pageInfo { hasNextPage } nodes { status latestShipmentStatus estimatedDeliveryAt trackingInformation { company number } events(first:1,reverse:true) { nodes { status happenedAt } } } } purchasingEntity { ... on PurchasingCompany { location { id } } } lineItems(first:20) { pageInfo { hasNextPage } nodes { id name title quantity productId variantId image { url } totalPrice { amount currencyCode } } } } } } }');
  return data.customer.orders.nodes.filter(o=>o.purchasingEntity?.location?.id===locationId);
 }
 
@@ -176,6 +186,7 @@ export async function readAccountAccessHelp(){
 }
 
 export function signOutShopify(){
+ if(nativeLogin){if(!idToken)throw new Error('Please sign in again to enable Shopify sign out.');return nativeLogin.logout(idToken).then(()=>clearLogin());}
  if(typeof window==='undefined')throw new Error('Shopify sign out is available in the web app.');
  if(!idToken)throw new Error('Please sign in again to enable Shopify sign out.');
  const url=new URL(config.account+'/authentication/logout');
