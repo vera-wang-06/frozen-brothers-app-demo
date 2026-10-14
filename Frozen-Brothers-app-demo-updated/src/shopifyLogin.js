@@ -38,7 +38,7 @@ async function complete(){
 }
 export async function readCustomer(){
  if(!accessToken)throw new Error('Please sign in again.');
- const res=await fetch(config.api,{method:'POST',headers:{'Content-Type':'application/json',Authorization:accessToken},body:JSON.stringify({query:'query LoginCheck { customer { id displayName firstName lastName emailAddress { emailAddress } } }'})});
+ const res=await fetch(config.api,{method:'POST',headers:{'Content-Type':'application/json',Authorization:accessToken},body:JSON.stringify({query:'query LoginCheck { customer { id displayName emailAddress { emailAddress } } }'})});
  const data=await res.json();
  if(!res.ok||data.errors||!data.data?.customer)throw new Error('Login completed, but customer details could not be read. Check customer_read_customers permission.');
  assertTestCustomer(data.data.customer);
@@ -74,7 +74,7 @@ export async function readLocations(){
 export async function readLocationProducts(locationId,after=null){
  assertTestCustomer(verifiedCustomer);
  if(!accessToken||!allowedLocations.some(l=>l.id===locationId))throw new Error('Choose a location returned for your test account.');
- const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title vendor productType description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
+ const query='query TestProducts($buyer:BuyerInput!,$after:String) @inContext(buyer:$buyer) { products(first:20,after:$after) { pageInfo { hasNextPage endCursor } nodes { id title description featuredImage { url } variants(first:20) { pageInfo { hasNextPage } nodes { id title sku availableForSale price { amount currencyCode } quantityRule { minimum maximum increment } } } } } }';
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables:{buyer:{customerAccessToken:accessToken,companyLocationId:locationId},after}})});
  const data=await res.json();
  if(!res.ok||data.errors)throw new Error('Could not read products with your company location and customer pricing. No base-price fallback is used.');
@@ -85,7 +85,7 @@ export async function readLocationProducts(locationId,after=null){
 }
 
 export function validQuantity(q,rule){return Number.isSafeInteger(q)&&q>=rule.minimum&&q%rule.increment===0&&(rule.maximum==null||q<=rule.maximum);}
-const cartFields=`id totalQuantity buyerIdentity { purchasingCompany { location { id } } } cost { subtotalAmount { amount currencyCode } totalAmount { amount currencyCode } totalTaxAmount { amount currencyCode } } lines(first:100) { pageInfo { hasNextPage } nodes { id quantity merchandise { ... on ProductVariant { id title product { title description featuredImage { url } } quantityRule { minimum maximum increment } } } cost { amountPerQuantity { amount currencyCode } totalAmount { amount currencyCode } } } }`;
+const cartFields=`id totalQuantity buyerIdentity { purchasingCompany { location { id } } } cost { subtotalAmount { amount currencyCode } totalAmount { amount currencyCode } totalTaxAmount { amount currencyCode } } lines(first:100) { pageInfo { hasNextPage } nodes { id quantity merchandise { ... on ProductVariant { id title product { title } quantityRule { minimum maximum increment } } } cost { amountPerQuantity { amount currencyCode } totalAmount { amount currencyCode } } } }`;
 export function resetTestCart(){if(cartBusy)throw new Error('Wait for the cart request to finish.');testCart=null;cartLocation=null;cartBlocked=false;}
 export async function changeTestCart(locationId,action,variantId,quantity){
  assertTestCustomer(verifiedCustomer);
@@ -110,16 +110,6 @@ export async function changeTestCart(locationId,action,variantId,quantity){
  const res=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query,variables})});
  const data=await res.json();let payload=data.data?.[operation];
  if(!res.ok||data.errors||!payload)throw new Error('Shopify cart request failed. No automatic retry was made.');
- async function inspectCart(cartId){
-  if(!cartId?.includes('?key=')){cartBlocked=true;throw new Error('Cart response did not include its private verification key. Testing stopped.');}
-  const response=await fetch('https://frozen-brothers-online.myshopify.com/api/2026-10/graphql.json',{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','X-Shopify-Storefront-Access-Token':'5999b3053ae48bc6c0aa96691ee066c1'},body:JSON.stringify({query:`query VerifyTestCart($id:ID!) { cart(id:$id) { ${cartFields} } }`,variables:{id:cartId}})});
-  const result=await response.json();
-  const requestId=response.headers?.get('x-request-id')||'not exposed';
-  if(!response.ok||result.errors||!result.data?.cart){cartBlocked=true;throw new Error('Could not independently read the test cart. Request ID: '+requestId);}
-  return {cart:result.data.cart,requestId};
- }
- let cartReadRequest='not requested';
- if(payload.cart&&!payload.userErrors.length){const verified=await inspectCart(payload.cart.id);payload={...payload,cart:verified.cart};cartReadRequest=verified.requestId;}
  // Some carts need an explicit identity update after creation. Reuse the
  // same cart; never recreate or accept a missing location as confirmation.
  if(operation==='cartCreate'&&payload.cart&&!payload.userErrors.length&&payload.cart.buyerIdentity?.purchasingCompany?.location?.id!==locationId){
@@ -129,7 +119,6 @@ export async function changeTestCart(locationId,action,variantId,quantity){
   if(!identityRes.ok||identityData.errors||!identityData.data?.cartBuyerIdentityUpdate){cartBlocked=true;throw new Error('Explicit cart buyer association failed. Cart testing stopped.');}
   const bound=identityData.data.cartBuyerIdentityUpdate;
   payload={...bound,warnings:[...payload.warnings,...bound.warnings]};
-  if(bound.cart&&!bound.userErrors.length){const verified=await inspectCart(bound.cart.id);payload={...payload,cart:verified.cart};cartReadRequest=verified.requestId;}
  }
  const errors=payload.userErrors.map(e=>e.message),warnings=payload.warnings.map(w=>w.message);
  if(errors.length)throw new Error('Shopify: '+errors.join(' ')+(warnings.length?' Warnings: '+warnings.join(' '):''));
@@ -138,7 +127,7 @@ export async function changeTestCart(locationId,action,variantId,quantity){
   if(actual!==locationId){
    cartBlocked=true;testCart=null;
    const reason=actual?'Returned a different company location.':'Returned no purchasing company location.';
-   throw new Error('Cart identity check stopped this test. '+reason+' Requested location: '+locationId+'. Returned location: '+(actual||'none')+'. '+(warnings.length?'Shopify warnings: '+warnings.join(' '):'Shopify returned no warnings.')+' Request ID: '+cartReadRequest);
+   throw new Error('Cart identity check stopped this test. '+reason+' Requested location: '+locationId+'. Returned location: '+(actual||'none')+'. '+(warnings.length?'Shopify warnings: '+warnings.join(' '):'Shopify returned no warnings.'));
   }
   testCart=payload.cart;cartLocation=locationId;
  }
@@ -146,19 +135,4 @@ export async function changeTestCart(locationId,action,variantId,quantity){
  if(testCart.lines.pageInfo.hasNextPage)throw new Error('Cart exceeds 100 lines; stop this test.');
  return {cart:testCart,warnings:payload.warnings.map(w=>w.message)};
  }finally{cartBusy=false;}
-}
-
-export async function readTestProfile(locationId){
- assertTestCustomer(verifiedCustomer);
- if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
- const data=await customerQuery('query TestProfile { customer { firstName lastName emailAddress { emailAddress } companyContacts(first:100) { nodes { locations(first:100) { nodes { id shippingAddress { formattedAddress } billingAddress { formattedAddress } buyerExperienceConfiguration { payNowOnly } } } } } } }');
- const selected=data.customer.companyContacts.nodes.flatMap(c=>c.locations.nodes).find(l=>l.id===locationId);
- if(!selected)throw new Error('Profile location not returned.');
- return {customer:data.customer,location:selected};
-}
-export async function readTestOrders(locationId){
- assertTestCustomer(verifiedCustomer);
- if(!allowedLocations.some(l=>l.id===locationId))throw new Error('Select your authorized location.');
- const data=await customerQuery('query TestOrderHistory { customer { orders(first:20,reverse:true,sortKey:PROCESSED_AT) { nodes { id name processedAt totalPrice { amount currencyCode } purchasingEntity { ... on PurchasingCompany { location { id } } } lineItems(first:20) { nodes { title quantity productId variantId image { url } } } } } } }');
- return data.customer.orders.nodes.filter(o=>o.purchasingEntity?.location?.id===locationId);
 }
